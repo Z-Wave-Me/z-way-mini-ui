@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+		<title>Z-Way demo UI</title>
+
+		<!-- CSS -->
+		<link href="css/jquery-ui.css" rel="stylesheet" type="text/css"/>
+		<link href="css/z-way-demo.css" rel="stylesheet" type="text/css"/>
+
+		<!-- Public available JS libs -->
+		<script src="js/jquery.js"></script>
+		<script src="js/jquery-ui.js"></script>
+		<script src="js/jquery.dateformat.js"></script>
+		<script src="js/Base64.js"></script>
+
+		<!-- Our own JS extensions -->
+		<script src="js/jquery.triggerpath.js"></script>
+
+		<!-- Our code -->
+		<script src="js/z-way-demo.js"></script>
+	</head>	
+	<body>
+		<table class="devices"></table>
+		<div>
+			Server time: <span class="updateTimeTick"></span><br/>
+			Server: <input type="text" value="" id="server_url" title="Example: http://localhost:12345"/><br/>
+			User: <input type="text" value="" id="server_user" title="Leave blank if not used"/><br/>
+			Password: <input type="password" value="" id="server_password"/><br/>
+			<button id="change_server">Change server</button>
+		</div>
+		<div class="DataHolder"></div>
+		<div id="interview_result"></div>
+	</body>
+</html>

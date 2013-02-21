@@ -1,0 +1,49 @@
+div.DataHolder {
+	font-size: smaller;
+	overflow-y: scroll;
+	max-height: 80%;
+}
+	div.Data {
+		margin: 2px;
+		padding: 1px 1px 1px 7px;
+	}
+
+div.device_icon img.device_icon_img {
+	padding-right: 5px;
+	vertical-align: middle;
+}
+
+.red {
+	color: #f55;
+}
+
+.underline {
+	text-decoration: underline;
+}
+
+.smallfont {
+	font-size: smaller;
+}
+
+.devices td {
+	text-align: left;
+	padding: 0.4em 1em;
+}
+.devices td.center {
+	text-align: center;
+}
+.devices td.right {
+	text-align: right;
+}
+
+.not_important {
+	color: gray;
+}
+
+.devices .device_icon {
+	display: inline;
+}
+
+body {
+	font-size: 80%;
+}
