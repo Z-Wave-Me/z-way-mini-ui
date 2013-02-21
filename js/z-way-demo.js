@@ -1,7 +1,7 @@
 /*
-# This file is part of Z-Way Demo UI.
+# This file is part of Z-Wave.Me Z-Way Demo UI.
 #
-# Copyright (C) 2010 Poltorak Serguei
+# Copyright (C) 2013 Poltorak Serguei, Z-Wave.Me
 #
 # Z-Way Demo UI is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -22,22 +22,31 @@ var tbl;
 // Holder for Z-Wave data tree comming from Z-Way server
 var ZWaveAPIData = { updateTime: 0 };
 
+// Init
 $(document).ready(function() {
+	// Set periodical updates
 	setInterval(getDataUpdate, 500);
 
+
+	// Init ZWaveAPIData structure
 	$.triggerPath.init(ZWaveAPIData);
 
+	// Set triggers on devices, instances and commandCasses list change
 	$.triggerPath.bindPathNoEval('devices,devices[*],devices[*].instances,devices[*].instances[*],devices[*].instances[*].commandClasses,devices[*].instances[*].commandClasses[*]', function(obj, path) {
 		showDevices();
 	});
 
+	// shortcut to table object
 	tbl = $('table.devices');
-	showDevices();
 	
+	showDevices();
+
+	// On Server Change button press update server URL and login/password
 	$('#change_server').bind('click', function() {
 		ZWayServerChange($('#server_url').val(), $('#server_user').val(), $('#server_password').val());
 	});
 	
+	// Apply jQuery button design
 	$('button').button();
 });
 
@@ -46,14 +55,14 @@ function showDevices() {
 	tbl.empty();
 	
 	if (ZWaveAPIData.devices == undefined) {
-		tbl.append($('<tr><td>Server has not started yet</td><tr>'));
+		tbl.append($('<tr><td>Server unreachable or has not started yet</td><tr>'));
 		return;
 	}
                                 
 	$.each(ZWaveAPIData.devices, function (nodeId, node) {
-		var nodeIsVirtual = node.data.isVirtual.value;
 		var controllerNodeId = ZWaveAPIData.controller.data.nodeId.value;
-		if (nodeId == 255 || nodeId == controllerNodeId || nodeIsVirtual)
+		if (nodeId == 255 || nodeId == controllerNodeId)
+			// We skip broadcase and self
 			return;
 
 		// Device status and battery
@@ -65,58 +74,43 @@ function showDevices() {
 		var hasWakeup = 0x84 in node.instances[0].commandClasses;
 		var hasBattery = 0x80 in node.instances[0].commandClasses;
 
+		// Add line with general device info
 		var nodeTr = $('<tr device="' + nodeId + '" class="device_header"><td class="center not_important">' + nodeId + '</td><td class="icon"></td><td class="right" id="sleeping"></td><td id="awake"></td><td id="operating"></td><td id="battery"></td><td id="interview"></td><td class="geek"><button id="pingDevice"></button></td></tr>');
-		nodeTr.find('td.icon').append(device_icon(nodeId, true));
+		nodeTr.find('td.icon').append(device_icon(nodeId));
 
+		// Bind trigger events
 		var prefixD = 'devices.' + nodeId + '.data.';
 		var prefixIC = 'devices.' + nodeId + '.instances[0].commandClasses'
 		nodeTr.bindPath(prefixD + 'isFailed,' + prefixD + 'isAwake,' + prefixD + 'lastSend,' + prefixD + 'lastReceived,' + prefixD + 'queueLength,devices.' + nodeId + '.instances[*].commandClasses[*].data.interviewDone,' + prefixIC + '[' + 0x84 + '].data.lastWakeup,' + prefixIC + '[' + 0x84 + '].data.lastSleep,' + prefixIC + '[' + 0x84 + '].data.interval,' + prefixIC + '[' + 0x80 + '].data.last', updateDeviceInfo, basicType, genericType, specificType, isFLiRS, hasWakeup, hasBattery, isListening);
 
+		// Bind button clicks
 		nodeTr.find('#interviewShow').bind('click', function() { showInterviewResults(parseInt($(this).closest('[device]').attr('device'), 10)); } );
 		nodeTr.find('#pingDevice').bind('click', function() { runCmd('devices[' + parseInt($(this).closest('[device]').attr('device'), 10) + '].SendNoOperation()'); }).html('Ping device');
 
+		// Append it to the table
 		tbl.append(nodeTr);
 
+		// For all instances
 		$.each(node.instances, function(instanceId, instance) {
 			if (instanceId == 0 && $.objLen(node.instances) > 1)
-				return; // we skip instance 0 if there are more, since it should be mapped to other instances or their superposition
+				return; // We skip instance 0 if there are more, since it should be mapped to other instances or their superposition
 
 			// Switches
-			var ccId = null;
-			var control;
+			// We choose SwitchMultilevel first, if not available, SwhichBinary is choosen
 			if (0x26 in instance.commandClasses) {
-				ccId = 0x26;
-				control_cont = '<button class="off">Off</button><button class="minus">-</button><button class="plus">+</button><button class="on">On</button><button class="max">Max</button>';
+				insertSwitch(nodeId, instanceId, 0x26, '<button class="off">Off</button><button class="minus">-</button><button class="plus">+</button><button class="on">On</button><button class="max">Max</button>');
 			} else if (0x25 in instance.commandClasses) {
-				ccId = 0x25;
-				control_cont = '<button class="off">Off</button><button class="on">On</button>';
-			}
-			
-			if (ccId) {
-				var nodeTr = $('<tr device="' + nodeId + '" class="device_header"><td class="center not_important">' + nodeId + '</td><td class="icon">' + (instanceId != 0?(' (#' + instanceId + ')'):'') + '</td><td id="level" class="right"></td><td class="right"><span title="Last update" id="updateTime"></span></td><td class="center"><button id="update">Update</button></td><td class="right"><span class="control"></span></td></tr>');
-				nodeTr.find('td.icon').prepend(device_icon(nodeId, true));
-
-				nodeTr.find('#level').bindPath('devices[' + nodeId + '].instances[' + instanceId + '].commandClasses[' + ccId + '].data.level', updateLevel, ccId);
-
-				control = $(control_cont);
-				control.attr('device', nodeId).attr('instance', instanceId).attr('commandClass', ccId).bind('click', switchButtonAction);
-				
-				// CC gui
-				nodeTr.find('.control').append(control);
-
-				(function(nodeId, instanceId, ccId) {
-					nodeTr.find('#update').bind('click', function() { runCmd('devices[' + nodeId + '].instances[' + instanceId + '].commandClasses[' + ccId + '].Get()'); } );
-				})(nodeId, instanceId, ccId);
-
-				tbl.append(nodeTr);
+				insertSwitch(nodeId, instanceId, 0x25, '<button class="off">Off</button><button class="on">On</button>');
 			}
 
+			// Add SensorMultilevel
 			if (0x30 in instance.commandClasses)
 				insertSensorMeter(nodeId, instanceId, 0x30, 0, 'level', updateSensor);
 			
 			if (0x31 in instance.commandClasses)
 				insertSensorMeter(nodeId, instanceId, 0x31, 0, 'val', updateSensor);
 
+			// Meters which are supposed to be sensors (measurable)
 			if (0x32 in instance.commandClasses)
 				$.each(instance.commandClasses[0x32].data, function(key, scale_val) {
 					var scaleId = parseInt(key, 10);
@@ -126,6 +120,7 @@ function showDevices() {
 						insertSensorMeter(nodeId, instanceId, 0x32, scaleId, scaleId, updateMeter);
 				});
 
+			// Meters (true meter values)
 			if (0x32 in instance.commandClasses)
 				$.each(instance.commandClasses[0x32].data, function(key, scale_val) {
 					var scaleId = parseInt(key, 10);
@@ -134,23 +129,15 @@ function showDevices() {
 					if ((scaleId == 2 || scaleId == 4 || scaleId == 6) && scale_val.sensorType.value == 1)
 						return; // we don't want to have measurable here (W, V, PowerFactor)
 
-					var nodeTr = $('<tr device="' + nodeId + '" instance="' + instanceId + '" scale="' + scaleId + '" class="device_header"><td class="center not_important">' + nodeId + '</td><td class="icon">' + (instanceId != 0?('(#' + instanceId + ')'):'') + '</td><td id="sensor_name"></td><td id="level" class="right"></td><td class="right"><span title="Last update" id="last_update"></span></td><td class="center"><button id="update">Update</button><button id="reset">Reset</button></td></tr>');
-					nodeTr.find('td.icon').prepend(device_icon(nodeId, true));
-					nodeTr.bindPath('devices[' + nodeId + '].instances[' + instanceId + '].commandClasses[' + 0x32 + '].data[' + scaleId + ']', updateMeter);
-
-					if (ZWaveAPIData.devices[nodeId].instances[instanceId].commandClasses[0x32].data.version.value < 2 || !ZWaveAPIData.devices[nodeId].instances[instanceId].commandClasses[0x32].data.resettable.value)
-						nodeTr.find('#reset').hide();
-
-					(function(nodeId, instanceId) {
-						nodeTr.find('#update').bind('click', function() { runCmd('devices[' + nodeId + '].instances[' + instanceId + '].commandClasses[' + 0x32 + '].Get()'); });
-						nodeTr.find('#reset').bind('click', function() { confirm_dialog('Are you sure to reset the meter?', 'Reset meter value', function() { runCmd('devices[' + nodeId + '].instances[' + instanceId + '].commandClasses[' + 0x32 + '].Reset()'); }) });
-					})(nodeId, instanceId);
-
-					tbl.append(nodeTr);
+					insertMeter(nodeId, instanceId, scaleId);
 				});
 
 
 			/*
+			 *
+			 * not finished in this demo - Thermostats and DoorLocks
+			 *
+			 
 			if (0x43 in instance.commandClasses || 0x40 in instance.commandClasses) {
 				function getCurrentThermostatMode(_instance) {
 					var hasThermostatMode = 0x40 in _instance.commandClasses;
@@ -320,19 +307,62 @@ function showDevices() {
 	$('button').button();
 };
 
+// Insert row for SwitchBinary and SwitchMultilevel
+function insertSwitch(nodeId, instanceId, ccId, control_html) {
+	// Add new line
+	var nodeTr = $('<tr device="' + nodeId + '" class="device_header"><td class="center not_important">' + nodeId + '</td><td class="icon">' + (instanceId != 0?(' (#' + instanceId + ')'):'') + '</td><td id="level" class="right"></td><td class="right"><span title="Last update" id="updateTime"></span></td><td class="center"><button id="update">Update</button></td><td class="right"><span class="control"></span></td></tr>');
+	nodeTr.find('td.icon').prepend(device_icon(nodeId));
 
-// Insert sensor row
-function insertSensorMeter(nodeId, instanceId, ccId, scaleId, path, updFunc) {
-	var nodeTr = $('<tr device="' + nodeId + '" instance="' + instanceId + '" scale="' + scaleId + '" class="device_header"><td class="center not_important">' + nodeId + '</td><td class="icon">' + (instanceId != 0?('(#' + instanceId + ')'):'') + '</td><td id="sensor_name"></td><td id="level" class="right"></td><td class="right"><span title="Last update" id="last_update"></span></td><td class="center"><button id="update">Update</button></td></tr>');
-	nodeTr.find('td.icon').prepend(device_icon(nodeId, true));
+	// Trigger update on changes
+	nodeTr.find('#level').bindPath('devices[' + nodeId + '].instances[' + instanceId + '].commandClasses[' + ccId + '].data.level', updateLevel, ccId);
 
-	nodeTr.bindPath('devices[' + nodeId + '].instances[' + instanceId + '].commandClasses[' + ccId + '].data.' + path, updFunc, ccId);
+	// Add button actions
+	nodeTr.find('.control').append($(control_html).attr('device', nodeId).attr('instance', instanceId).attr('commandClass', ccId).bind('click', switchButtonAction));
 
+	// Action for Update button
 	nodeTr.find('#update').bind('click', function() { runCmd('devices[' + nodeId + '].instances[' + instanceId + '].commandClasses[' + ccId + '].Get()'); } );
 
+	// Append it
 	tbl.append(nodeTr);
 };
 
+// Insert row for SensorBinary, SensroMultilevel and Meter
+function insertSensorMeter(nodeId, instanceId, ccId, scaleId, path, updFunc) {
+	// Add new line
+	var nodeTr = $('<tr device="' + nodeId + '" instance="' + instanceId + '" scale="' + scaleId + '" class="device_header"><td class="center not_important">' + nodeId + '</td><td class="icon">' + (instanceId != 0?('(#' + instanceId + ')'):'') + '</td><td id="sensor_name"></td><td id="level" class="right"></td><td class="right"><span title="Last update" id="last_update"></span></td><td class="center"><button id="update">Update</button></td></tr>');
+	nodeTr.find('td.icon').prepend(device_icon(nodeId, true));
+
+	// Trigger update on changes
+	nodeTr.bindPath('devices[' + nodeId + '].instances[' + instanceId + '].commandClasses[' + ccId + '].data.' + path, updFunc, ccId);
+
+	// Action for Update button
+	nodeTr.find('#update').bind('click', function() { runCmd('devices[' + nodeId + '].instances[' + instanceId + '].commandClasses[' + ccId + '].Get()'); } );
+
+	// Append it
+	tbl.append(nodeTr);
+};
+
+function insertMeter(nodeId, instanceId, ccId, scaleId) {
+	// Add new line
+	var nodeTr = $('<tr device="' + nodeId + '" instance="' + instanceId + '" scale="' + scaleId + '" class="device_header"><td class="center not_important">' + nodeId + '</td><td class="icon">' + (instanceId != 0?('(#' + instanceId + ')'):'') + '</td><td id="sensor_name"></td><td id="level" class="right"></td><td class="right"><span title="Last update" id="last_update"></span></td><td class="center"><button id="update">Update</button><button id="reset">Reset</button></td></tr>');
+	nodeTr.find('td.icon').prepend(device_icon(nodeId, true));
+	
+	// Trigger update on changes
+	nodeTr.bindPath('devices[' + nodeId + '].instances[' + instanceId + '].commandClasses[' + 0x32 + '].data[' + scaleId + ']', updateMeter);
+
+	// If it is Meter with version < V2 or it is not resettable, hide Reset button (it does not support reset function
+	if (ZWaveAPIData.devices[nodeId].instances[instanceId].commandClasses[0x32].data.version.value < 2 || !ZWaveAPIData.devices[nodeId].instances[instanceId].commandClasses[0x32].data.resettable.value)
+		nodeTr.find('#reset').hide();
+
+	// Actions on buttons
+	nodeTr.find('#update').bind('click', function() { runCmd('devices[' + nodeId + '].instances[' + instanceId + '].commandClasses[' + 0x32 + '].Get()'); });
+	nodeTr.find('#reset').bind('click', function() { confirm_dialog('Are you sure to reset the meter?', 'Reset meter value', function() { runCmd('devices[' + nodeId + '].instances[' + instanceId + '].commandClasses[' + 0x32 + '].Reset()'); }) });
+
+	// Append it
+	tbl.append(nodeTr);
+}
+
+// Callback on button press for a Switch
 function switchButtonAction() {
 	var nodeId = $(this).attr('device');
 	var instanceId = $(this).attr('instance');
@@ -365,10 +395,10 @@ function updateDeviceInfo(obj, path, basicType, genericType, specificType, isFLi
 	var isFailed = node.data.isFailed.value;
 	var isAwake = node.data.isAwake.value;
 
-	// sleeping state
-	var sleeping_cont;
+	// Sleeping state
+	var sleeping_html;
 	if (isListening)
-		sleeping_cont = ''; // mains powered device
+		sleeping_html = ''; // Mains powered device
 	else if (!isListening && hasWakeup) {
 		var approx = '';
 		var sleepingSince = parseInt(node.instances[0].commandClasses[0x84].data.lastSleep.value, 10);
@@ -380,36 +410,39 @@ function updateDeviceInfo(obj, path, basicType, genericType, specificType, isFLi
 		};
 		var interval = parseInt(node.instances[0].commandClasses[0x84].data.interval.value, 10);
 		if (interval == 0)
-			interval = NaN; // to indicate that interval and hence next wakeup are unknown
+			interval = NaN; // To indicate that interval and hence next wakeup are unknown
 		var lastSleep = getTime(sleepingSince, '?');
 		var nextWakeup = getTime(sleepingSince + interval, '?');
-		sleeping_cont = '<span title="Sleeping since" class="not_important">' + approx + lastSleep + '</span> &#8594; <span title="Next wakeup">' + approx + nextWakeup + '</span> <img src="pics/icons/type_battery_with_wakeup.png" title="Battery operated device with wakeup"/>';
+		sleeping_html = '<span title="Sleeping since" class="not_important">' + approx + lastSleep + '</span> &#8594; <span title="Next wakeup">' + approx + nextWakeup + '</span> <img src="pics/icons/type_battery_with_wakeup.png" title="Battery operated device with wakeup"/>';
 	} else if (!isListening && isFLiRS)
-		sleeping_cont = '<img src="pics/icons/type_flirs.png" title="FLiRS device"/>';
+		sleeping_html = '<img src="pics/icons/type_flirs.png" title="FLiRS device"/>';
 	else
-		sleeping_cont = '<img src="pics/icons/type_remote.png" title="Battery operated remote control"/>';
+		sleeping_html = '<img src="pics/icons/type_remote.png" title="Battery operated remote control"/>';
 
-	// awake info
-	var awake_cont = '';
+	// Awake info
+	var awake_html = '';
 	if (!isListening && !isFLiRS)
-		awake_cont = isAwake?('<img src="pics/icons/status_awake.png" title="Device is active"/>'):('<img src="pics/icons/status_sleep.png" title="Device is sleeping"/>');
-		
-	var operating_cont = (isFailed?('<img src="pics/icons/status_dead.png" title="Device is dead"/>'):('<img src="pics/icons/status_ok.png" title="Device is operating"/>')) + ' <span title="Last communication" class="not_important">' + getTime(lastCommunication, '?') + '</span>';
+		awake_html = isAwake?('<img src="pics/icons/status_awake.png" title="Device is active"/>'):('<img src="pics/icons/status_sleep.png" title="Device is sleeping"/>');
+	
+	// Failed node status
+	var operating_html = (isFailed?('<img src="pics/icons/status_dead.png" title="Device is dead"/>'):('<img src="pics/icons/status_ok.png" title="Device is operating"/>')) + ' <span title="Last communication" class="not_important">' + getTime(lastCommunication, '?') + '</span>';
 
-	var _interview_cont = '<img src="pics/icons/status_ok.png" title="Device is interviewed"/>';
-	var __interview_cont = '<img src="pics/icons/interview_unfinished.png" title="Device is not fully interviewed"/>';
+	// Interview results
+	var _interview_html = '<img src="pics/icons/status_ok.png" title="Device is interviewed"/>';
+	var __interview_html = '<img src="pics/icons/interview_unfinished.png" title="Device is not fully interviewed"/>';
 	if (ZWaveAPIData.devices[nodeId].data.nodeInfoFrame.value && ZWaveAPIData.devices[nodeId].data.nodeInfoFrame.value.length) {
 		for (var iId in ZWaveAPIData.devices[nodeId].instances)		
 			for (var ccId in ZWaveAPIData.devices[nodeId].instances[iId].commandClasses)
 				if (!ZWaveAPIData.devices[nodeId].instances[iId].commandClasses[ccId].data.interviewDone.value)  {
-					_interview_cont = __interview_cont;
+					_interview_html = __interview_html;
 				}
 	} else
-		_interview_cont = __interview_cont;
+		_interview_html = __interview_html;
 	
-	interview_cont = '<a href="#" id="interviewShow">' + _interview_cont + '</a>';
+	interview_html = '<a href="#" id="interviewShow">' + _interview_html + '</a>';
 
-	var battery_cont = '';
+	// Battery status
+	var battery_html = '';
 	if (hasBattery) {
 		var battery_charge = parseInt(node.instances[0].commandClasses[0x80].data.last.value);
 		var battery_updateTime = getTime(node.instances[0].commandClasses[0x80].data.last.updateTime);
@@ -427,50 +460,51 @@ function updateDeviceInfo(obj, path, basicType, genericType, specificType, isFLi
 			battery_charge_text = '?';
 			battery_charge_icon = '0';
 		};
-		battery_cont = '<img src="pics/icons/battery_' + battery_charge_icon + '.png" title="Battery powered device"/> <span class="' + (battery_warn?'red':'') + '" title="' + battery_updateTime + '">' + battery_charge_text + '</span>';
+		battery_html = '<img src="pics/icons/battery_' + battery_charge_icon + '.png" title="Battery powered device"/> <span class="' + (battery_warn?'red':'') + '" title="' + battery_updateTime + '">' + battery_charge_text + '</span>';
 	};
 
-	$(this).find('#sleeping').html(sleeping_cont);
-	$(this).find('#awake').html(awake_cont);
-	$(this).find('#operating').html(operating_cont);
-	$(this).find('#battery').html(battery_cont);
-	$(this).find('#interview').html(interview_cont);
+	// Update HTML objects
+	$(this).find('#sleeping').html(sleeping_html);
+	$(this).find('#awake').html(awake_html);
+	$(this).find('#operating').html(operating_html);
+	$(this).find('#battery').html(battery_html);
+	$(this).find('#interview').html(interview_html);
 	if (isListening || isFLiRS)
 		$(this).find('#pingDevice').show();
 	else
 		$(this).find('#pingDevice').hide();
 };
 
-// Binding function for switches update
+// Binding function for switches level update
 function updateLevel(obj, path, ccId) {
-	var level_cont;
+	var level_html;
 	var level_color;
 
 	var level = obj.value;
 
 	if (level === '' || level === null) {
-		level_cont = '?';
+		level_html = '?';
 		level_color = 'gray';
 	} else {
 		level = parseInt(level, 10);
 		if (level == 0) {
-			level_cont = 'Off';
+			level_html = 'Off';
 			level_color = 'black';
 		} else if (level == 255 || level == 99) {
-			level_cont = 'On';
+			level_html = 'On';
 			level_color = '#FFCF00';
 		} else {
-			level_cont = level.toString() + ((ccId == 0x26) ? '%' : '');
+			level_html = level.toString() + ((ccId == 0x26) ? '%' : '');
 			var lvlc_r = ('00' + parseInt(0x9F + 0x60 * level / 99).toString(16)).slice(-2);
 			var lvlc_g = ('00' + parseInt(0x7F + 0x50 * level / 99).toString(16)).slice(-2);
 			level_color = '#' + lvlc_r + lvlc_g + '00';
 		}
 	};
-	$(this).html(level_cont).css('color', level_color);
+	$(this).html(level_html).css('color', level_color);
 	$(this).parent().find('#updateTime').html(getUpdated(obj));
 };
 
-// Binding function for Lock update
+// Binding function for DoorLock update
 function updateLockState(obj, path) {
 	var mode = obj.value;
 	var mode_lbl;
@@ -484,13 +518,13 @@ function updateLockState(obj, path) {
 	$(this).parent().find('#updateTime').html(getUpdated(obj));
 };
 
-// binding function for sensors update
+// Binding function for SensorsBinary and SensorMultilevel update
 function updateSensor(obj, path, ccId) {
 	var nodeId = $(this).attr('device');
 	var instanceId = $(this).attr('instance');
 	var instance = ZWaveAPIData.devices[nodeId].instances[instanceId];
 	var sensorName = '';
-	var level_cont;
+	var level_html;
 	var level_color = 'black';
 	var updatedTime;
 	if (ccId == 0x31) {
@@ -501,30 +535,30 @@ function updateSensor(obj, path, ccId) {
 		var val = obj.value;
 		updatedTime = getUpdated(obj);
 		if (val === '' || val === null) {
-			level_cont = '?';
+			level_html = '?';
 			level_color = 'gray';
 		} else
-			level_cont = val + ' ' + scale;
+			level_html = val + ' ' + scale;
 	} else if (ccId == 0x30) {
 		var level = obj.value;
 		sensorName = 'Sensor state';
 		updatedTime = getUpdated(obj);
 		if (level === '' || level === null) {
-			level_cont = '?';
+			level_html = '?';
 			level_color = 'gray';
 		} else {
-			level_cont = level ? 'Sensor triggered' : 'Sensor idle';
+			level_html = level ? 'Sensor triggered' : 'Sensor idle';
 			level_color = level ? '#FFCF00' : 'black';
 		}
 	};
 	$(this).find('#sensor_name').html(sensorName);
-	$(this).find('#level').html(level_cont).css('color', level_color);
+	$(this).find('#level').html(level_html).css('color', level_color);
 	$(this).find('#last_update').html(updatedTime);
 };
 
-// Binding function for meters update
+// Binding function for Meter update
 function updateMeter(obj, path, ccId) {
-	var level_cont;
+	var level_html;
 	var level_color = 'black';
 
 	var sensorName = obj.sensorTypeString.value;
@@ -532,22 +566,24 @@ function updateMeter(obj, path, ccId) {
 	var val = obj.val.value;
 	var updatedTime = getUpdated(obj);
 	if (val === '' || val === null) {
-		level_cont = '?';
+		level_html = '?';
 		level_color = 'gray';
 	} else
-		level_cont = val + ' ' + scale;
+		level_html = val + ' ' + scale;
 	$(this).find('#sensor_name').html(sensorName);
-	$(this).find('#level').html(level_cont).css('color', level_color);
+	$(this).find('#level').html(level_html).css('color', level_color);
 	$(this).find('#last_update').html(updatedTime);
 };
 
-// render device icon depending on device status
+// Render device icon depending on device status
 function device_icon(nodeId) {
 	ico = $('<div device="' + nodeId + '" class="device_icon"><img class="device_icon_img"/></div>');
 	ico.find('.device_icon_img').bind('error', function() {
+		// in case the image is not found on the server
 		if ($(this).attr('src') != 'pics/icons/device_icon_unknown.png')
 			$(this).attr('src', 'pics/icons/device_icon_unknown.png');
-	}).bindPath('devices[' + nodeId + '].instances[0].commandClasses[' + 0x25 + '].data.level,devices[' + nodeId + '].instances[0].commandClasses[' + 0x26 + '].data.level,devices[' + nodeId + '].instances[0].commandClasses[' + 0x30 + '].data.level,devices[' + nodeId + '].instances[0].commandClasses[' + 0x31 + '].data.val,deviceIconsUpdateManually', function(obj, path, icon_nodeId) {
+	}).bindPath('devices[' + nodeId + '].instances[0].commandClasses[' + 0x25 + '].data.level,devices[' + nodeId + '].instances[0].commandClasses[' + 0x26 + '].data.level,devices[' + nodeId + '].instances[0].commandClasses[' + 0x30 + '].data.level,devices[' + nodeId + '].instances[0].commandClasses[' + 0x31 + '].data.val', function(obj, path, icon_nodeId) {
+		// We bind changes of level of some Command Classes. Add more if you need to update icon on other DataHolders
 		var icon_name_suffix = 'unregistered';
 		var extension = 'png'; // default - can be changed to gif to for animated icons
 		
@@ -675,13 +711,13 @@ function make_basic_auth(user, password) {
 	return "Basic " + hash;
 }
 
-// this allows to switch to different server on the fly
+// Prepare new server URL and login/passwd
 var server_host = '';
 var server_auth = '';
 ZWayServerChange = function(host, user, pwd) {
 	server_host = host;
 	server_auth = make_basic_auth(user, pwd);
-	ZWaveAPIData.updateTime = 0;
+	ZWaveAPIData.updateTime = 0; // Fetch all data from server
 };
 
 // len function
@@ -696,8 +732,8 @@ function getDataHolder(data) {
 	r += '<div class="DataElement">' + data.name+': <font color="' + ((data.updateTime > data.invalidateTime) ? 'green' : 'red') + '">'+((typeof(data.value) !== 'undefined' && data.value != null)?data.value.toString():'None')+'</font>' + ' (' + getUpdated(data) + ')</div>';
 
 	$.each(data, function (key, el) {
-		if (key != 'name' && key != 'type' && key != 'updateTime' && key != 'invalidateTime' && key != 'value' && // these are internal values
-				key != 'ZDDXML' && key != 'ZDDXMLLang' && key != 'capabilitiesNames') // these make the dialog monstrious
+		if (key != 'name' && key != 'type' && key != 'updateTime' && key != 'invalidateTime' && key != 'value' && // these are internal values - skip them
+				key != 'ZDDXML' && key != 'ZDDXMLLang' && key != 'capabilitiesNames') // these make the dialog monstrious - skip them
 			r += getDataHolder(el);
 	});
 
@@ -705,7 +741,7 @@ function getDataHolder(data) {
 	return r
 };
 
-// Shows data holder
+// Shows Data Holder in a dialog
 function showDataHolder(data) {	
 	$('div.DataHolder').html(getDataHolder(data))
 		.css({'max-height': $(document.body).height()-128, height: 'auto'})
@@ -713,9 +749,6 @@ function showDataHolder(data) {
 			modal: true,
 		       	title: 'Command class data',
 		       	width: 'auto',
-			open: function() {
-				dialog_init(this);
-			},
 		       	buttons: {
 		       		ok : function() {
 			       		$(this).dialog("close");
@@ -724,7 +757,7 @@ function showDataHolder(data) {
 		});
 };
 
-// Show interview results
+// Show interview results in a dialog
 function showInterviewResults(nodeId) {	
 	var interviewResults;
 	$('#interview_result')
@@ -751,9 +784,6 @@ function showInterviewResults(nodeId) {
 			modal: true,
 		       	title: 'Interview results',
 			width: 'auto',
-			open: function() {
-				dialog_init(this);
-			},
 		       	buttons: {
 				ok : function() {
 					$(this).dialog("close");
@@ -763,7 +793,7 @@ function showInterviewResults(nodeId) {
 
 };
 
-// run ZWaveAPI command via HTTP POST
+// Run ZWaveAPI command via HTTP POST
 function runCmd(cmd, success_cbk) {
 	$.postJSON('/ZWaveAPI/Run/'+ cmd, function (data, status) {
 		if (status == 'success' || status == '') {
@@ -785,11 +815,15 @@ function getDataUpdate(sync) {
 	}
 };
 
+// Callback of getDataUpdate: handles diff changes returned by server
 function handlerDataUpdate(data, status) {
 	if (status != 'success' || data == null) {
 		running_getDataUpdate = false; // task done
+		error_msg('Error connecting to server: ' + status + ' ' + data.status);
 		return;
 	};
+	
+	error_msg('');
 
 	try {
 		// handle data
@@ -810,6 +844,10 @@ function handlerDataUpdate(data, status) {
 
 	// update time button. we are doing it here and not using bindPath to save resources
 	$('.updateTimeTick').removeClass('red').html((new Date(parseInt(ZWaveAPIData.updateTime, 10)*1000)).format('HH:MM:ss'));
+};
+
+function error_msg(message) {
+	$('#server_connection_status').html(message);
 };
 
 // Calculates difference between two dates in days

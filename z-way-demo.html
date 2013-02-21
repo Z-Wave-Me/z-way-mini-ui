@@ -24,10 +24,11 @@
 		<table class="devices"></table>
 		<div>
 			Server time: <span class="updateTimeTick"></span><br/>
-			Server: <input type="text" value="" id="server_url" title="Example: http://localhost:12345"/><br/>
+			Server: <input type="text" value="" id="server_url" title="Example: http://192.168.1.100:8083"/><br/>
 			User: <input type="text" value="" id="server_user" title="Leave blank if not used"/><br/>
 			Password: <input type="password" value="" id="server_password"/><br/>
-			<button id="change_server">Change server</button>
+			<button id="change_server">Change server</button><br/>
+			<span id="server_connection_status" class="red"></span>
 		</div>
 		<div class="DataHolder"></div>
 		<div id="interview_result"></div>
